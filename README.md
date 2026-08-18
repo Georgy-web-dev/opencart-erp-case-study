@@ -87,7 +87,7 @@ push updates. Validated against the live API, not against mocks.
 ## How it was actually built
 
 Worth being straight about this, because it's a large part of why 12 modules shipped in
-seven weeks: the whole thing was built with AI agents, and most of the work was making
+six weeks: the whole thing was built with AI agents, and most of the work was making
 that reliable rather than writing code by hand.
 
 The two files that mattered were a master plan and a dev log. The plan opens with a
