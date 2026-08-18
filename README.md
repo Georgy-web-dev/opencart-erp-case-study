@@ -1,112 +1,125 @@
-# OpenCart ERP — case study
+# An ERP inside OpenCart
 
-Most OpenCart stores outgrow OpenCart. It handles a catalogue and a checkout well, and
-then the business needs warehouses, costing, supplier debts, multi-currency ledgers and
-a CRM — and the usual answer is to buy a separate ERP and spend the next year keeping
-two systems in sync.
+OpenCart handles a catalogue and a checkout well. It does not handle warehouses, stock
+costing, supplier debt, multi-currency ledgers, or anything that resembles a CRM. The
+usual answer is to buy a separate ERP and then spend a year keeping two databases in
+agreement with each other.
 
-This was the other answer: build that ERP layer **as OpenCart modules**, inside the
-admin panel the staff already use, against one database. Delivered for a live wholesale
-store with real orders running through it the whole time.
+I did the other thing. The ERP got built as OpenCart modules, in the admin panel the
+staff already had open all day, against one database. It went onto a live wholesale
+store with real orders running through it, and stayed there for the whole build. That
+constraint shaped most of what follows.
 
-**This repository contains no source code.** The work was done under a client
-engagement, so what follows is an architecture and delivery write-up with redacted
-screenshots. Happy to walk through the implementation in an interview.
+**There's no source code in this repo.** It was client work. What's here is a write-up
+and four redacted screenshots. Happy to go through the implementation properly in an
+interview.
 
 | | |
 |---|---|
-| **Role** | Sole developer — design, build, deployment |
-| **Duration** | July – August 2026 |
-| **Platform** | OpenCart 3.0.3.9, PHP, MySQL, Twig, jQuery |
-| **Scale** | ~70,000 lines of PHP across 273 files; 44 installable submodules |
-| **Delivery** | 12 numbered modules, each deployed and verified on the live store |
+| Role | Sole developer |
+| Duration | July to August 2026 |
+| Stack | OpenCart 3.0.3.9, PHP, MySQL, Twig, jQuery |
+| Size | ~70,000 lines of PHP, 273 files, 44 installable submodules |
+| Delivery | 12 numbered modules, each one deployed and checked on the live store |
 
 ---
 
-## What was built
+## What got built
 
-### ERP core
+### The core
 
 ![ERP dashboard](img/erp-dashboard.png)
 
-A dashboard fronting the whole system — action shortcuts, section counters, and live
-figures for units on hand, stock value at moving-average cost, receivables and payables.
+A dashboard in front of everything else: shortcuts for the four things people do twenty
+times a day, counters per section, and live figures for units on hand, stock value at
+moving-average cost, and what's owed in both directions.
 
-**Inventory**
-- Warehouses and cells, with manual order fulfilment
-- Stock balances across the whole catalogue, stock adjustments, low-stock reorder alerts
-- **Reservations** — stock is held at order time rather than at dispatch, which is what
-  actually fixed the overselling
-- **Packages / boxes** — derived from order lines rather than stored, so box contents
-  can never drift out of sync with what was sold
-- Goods receipt with **moving-average costing**, receipt journals and line-level detail
+**Inventory.** Warehouses and cells, with manual fulfilment for orders that don't follow
+the happy path. Stock balances across the whole catalogue, adjustments, low-stock
+alerts. Goods receipt with moving-average costing, plus receipt journals and line-level
+detail.
+
+Two decisions here are worth pulling out. Stock gets reserved at order time rather than
+at dispatch, and that on its own is what stopped the overselling. And boxes are derived
+from order lines instead of being stored as their own records, so box contents can't
+drift away from what was actually sold. Storing them separately would have been easier
+to write and would have started lying within a month.
 
 ![Warehouses](img/warehouses.png)
 
-**Finance**
-- Cash accounts, cashflow, bank statements, payment documents
-- Debt ledger — who owes us and who we owe, per currency, with a single-currency roll-up
-- Multi-currency with automatically refreshed FX rates, and no cron dependency
-- Purchase orders, sales orders, sales invoices, goods issue, returns
-- Product tax with HSN codes, and generated print forms
+**Finance.** Cash accounts, cashflow, bank statements, payment documents. A debt ledger
+showing who owes us and who we owe, per currency, with a roll-up into one currency for
+the people who just want the number. Multi-currency with FX rates that refresh
+themselves, no cron involved. Purchase orders, sales orders, sales invoices, goods
+issue, returns. Product tax with HSN codes and generated print forms.
 
-**CRM**
+**CRM.**
 
 ![Counterparty CRM](img/counterparty-crm.png)
 
-Counterparties unified buyers and suppliers into one record with contacts, contracts,
-groups, per-counterparty currency and a **credit limit that warns rather than blocks** —
-a deliberate call, because a hard block would have stopped legitimate trade at the worst
-possible moment. Existing OpenCart customers link into counterparties, which closed a
-long-standing duplicate-record problem without a destructive migration.
+Counterparties pull buyers and suppliers into a single record: contacts, contracts,
+groups, a per-counterparty currency, and a credit limit. The limit warns, it doesn't
+block. That was deliberate and slightly unpopular at the time. A hard block would fire
+exactly when someone is trying to close a deal, and the person it blocks has no way to
+override it, so you get a workaround culture instead of a control.
 
-### Multi-channel messenger
+Existing OpenCart customers link into counterparties rather than being merged into them.
+That closed a long-running duplicate-records problem without a migration that could go
+wrong once and take the customer table with it.
+
+### Messaging
 
 ![Messenger channels](img/messenger-channels.png)
 
-A unified inbox on the order screen: **WhatsApp** (via a self-hosted Evolution API on
-Docker), **Telegram**, **Viber** and **email over SMTP**. Text, voice notes, images,
-video and document attachments, with unread badges surfaced in the order list.
-Conversations attach to the order they belong to, so context stops living on someone's
-phone.
+Sales conversations were happening on WhatsApp, on Telegram, and over email, and none of
+it was written down anywhere near the order. So: a unified inbox on the order screen.
+WhatsApp through a self-hosted Evolution API on Docker, plus Telegram, Viber, and email
+over SMTP. Text, voice notes, images, video, documents. Unread badges surface in the
+order list so nothing sits unanswered.
 
 ### Shipping
 
-Courier API integration — AWB generation, live status polling, cancellation, and webhook
-push for status updates. Validated against the real API rather than mocks.
+Courier API integration: AWB generation, status polling, cancellation, and a webhook for
+push updates. Validated against the live API, not against mocks.
 
 ---
 
-## Engineering notes
+## Notes from the build
 
-**OCMOD matches one line at a time.** OpenCart 3 splits target files on `\n` and runs
-`stripos` per line, so a multi-line `<search>` block can never match — and it fails
-*silently*: no error, no log entry, the operation is skipped and the file simply never
-gets patched. Order-window panels didn't render for a week because their anchor was a
-three-line block. Every anchor after that was a single unique line, using `index` to
-disambiguate and `offset` to insert at a structural boundary.
+**OCMOD matches one line at a time.** OpenCart 3 splits the target file on `\n` and runs
+`stripos` per line, so a multi-line `<search>` block can never match anything. It fails
+silently. No error, no log line, the operation is skipped and the file just never gets
+patched. The order-window panels didn't render for about a week before I worked that
+out, because their anchor was three lines long. Every anchor after that was a single
+unique line, using `index` to pick the right occurrence and `offset` to insert at a
+sensible boundary.
 
-**`storage/` is not always where you think.** When it's relocated outside the webroot,
-the old in-webroot directory usually still exists and is empty — so the obvious place to
-check for logs and compiled modification output will tell you nothing is compiled and
-there are no logs, and both are lies. Read `config.php` before believing either.
+**Check where `storage/` actually is.** If it's been moved outside the webroot, the old
+directory usually still exists and is empty. So the obvious place to look will tell you
+that nothing is compiled and there are no logs, and it will be wrong about both. Read
+`config.php` first.
 
-**Everything is additive.** New tables are `oc_erp_*` (InnoDB/utf8mb4) alongside
-OpenCart's own MyISAM/utf8 tables, with no foreign keys crossing the boundary. Cart and
-order hooks went through `oc_event` where OCMOD would have been brittle. Core files stay
-patchable and the store still upgrades.
+**Additive, always.** New tables are `oc_erp_*` on InnoDB/utf8mb4, sitting next to
+OpenCart's own MyISAM/utf8 tables with no foreign keys crossing between them. Cart and
+order hooks went through `oc_event` in the places where OCMOD would have been fragile.
+Core files stay patchable and the store can still take an upgrade.
 
-**Written down as it went.** A running dev log records each module, what was verified
-live, and — importantly — which earlier entries were later proven wrong. Superseded
-decisions were struck through rather than deleted, so the reasoning survives.
+**Write it down while you still remember.** There's a dev log recording each module and
+what was verified live. More useful than that, it records which of its own earlier
+entries turned out to be wrong. Those got struck through instead of deleted, so six
+weeks later I could still see why I'd believed the wrong thing.
 
 ---
 
-## What I'd change
+## What I'd do differently
 
-The scope grew module by module from client feedback, which kept every release useful
-but left the finance and document layers sharing concepts they should have shared
-explicitly from the start — that surfaced later as a merge of adjustments and journals.
-Given the same brief again I'd model documents generically before building the first
-one, and I'd push harder, earlier, for a staging copy of the store; verifying on
-production is survivable but it makes every deploy heavier than it needs to be.
+Scope grew module by module out of client feedback. That kept every release useful, but
+it meant the finance and document layers ended up sharing concepts they should have been
+sharing on purpose from the start. It surfaced later as a merge of adjustments and
+journals that I'd rather not have needed. Next time I'd model documents generically
+before building the first one.
+
+The other thing is staging. I'd push much harder, much earlier, for a copy of the store
+to deploy against. Verifying on production is survivable, and I did survive it, but
+every single deploy is heavier than it needs to be and you end up doing your careful
+thinking at the wrong end of the process.
