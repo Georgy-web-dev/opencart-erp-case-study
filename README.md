@@ -84,6 +84,39 @@ push updates. Validated against the live API, not against mocks.
 
 ---
 
+## How it was actually built
+
+Worth being straight about this, because it's a large part of why 12 modules shipped in
+seven weeks: the whole thing was built with AI agents, and most of the work was making
+that reliable rather than writing code by hand.
+
+The two files that mattered were a master plan and a dev log. The plan opens with a
+"read this first when resuming" block, holds a decision log, and keeps a list of open
+questions. The dev log records every module, what was verified live, and which of its
+own earlier entries later turned out to be wrong. Those get struck through rather than
+deleted. Both files exist so that a fresh session starts knowing what the last one
+learned, instead of rediscovering the same server quirk for the third time.
+
+Around that:
+
+- **Custom Claude Code skills.** I wrote a `grill-me` skill that interviews me about a
+  design one question at a time, walking the decision tree and resolving dependencies
+  before anything gets written. The open-questions section of the master plan was filled
+  in by running it. Also a `caveman` skill that strips the prose down when I just want
+  throughput.
+- **MCP servers, per project.** Context7 for library docs so the model isn't working
+  from stale training data, Playwright where a browser was needed, and others depending
+  on the job.
+- **Context engineering as the actual discipline.** The hard part of a 70,000-line
+  codebase is not generating code, it's making sure the thing writing it knows the
+  fifteen non-obvious facts about this specific server. Hence the "don't re-discover
+  these" section at the top of the dev log.
+
+Same approach on other projects since, including a perpetuals DEX aggregator where the
+MCP setup pulls in Privy and OpenRouter docs directly.
+
+---
+
 ## Notes from the build
 
 **OCMOD matches one line at a time.** OpenCart 3 splits the target file on `\n` and runs
@@ -103,11 +136,6 @@ that nothing is compiled and there are no logs, and it will be wrong about both.
 OpenCart's own MyISAM/utf8 tables with no foreign keys crossing between them. Cart and
 order hooks went through `oc_event` in the places where OCMOD would have been fragile.
 Core files stay patchable and the store can still take an upgrade.
-
-**Write it down while you still remember.** There's a dev log recording each module and
-what was verified live. More useful than that, it records which of its own earlier
-entries turned out to be wrong. Those got struck through instead of deleted, so six
-weeks later I could still see why I'd believed the wrong thing.
 
 ---
 
